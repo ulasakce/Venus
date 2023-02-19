@@ -1,2 +1,2 @@
 # Venus
-https://ulasakce.github.io/Venus-deneme/
+https://ulasakce.github.io/Venus/
