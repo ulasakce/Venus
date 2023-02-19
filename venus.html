@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<style>
+    
+body {
+    background-color: black;
+    margin: 0;
+}
+canvas {
+    transform: scale(0.25);
+    max-width: calc(90% * 4);
+    width: calc(310px * 4);
+}
+.wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}    
+</style>
+</head>
+
+<body>
+<div class="wrap">
+    <canvas id="cv1" width="500" height="500">
+    </canvas>
+</div>
+<div class="wrap">
+    <canvas id="cv2" width="500" height="500">
+    </canvas>
+</div>
+
+<script>
+
+class P3 {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    scale(scalar) { return new P3(this.x*scalar, this.y*scalar, this.z*scalar); }
+    add(p) { return new P3(this.x+p.x, this.y+p.y, this.z+p.z); }
+    sub(p) { return new P3(this.x-p.x, this.y-p.y, this.z-p.z); }
+    mag() { return Math.sqrt(this.x**2 + this.y**2 + this.z**2); }
+    unit() { return this.scale(1/this.mag()); }
+    dist(p) { return this.sub(p).mag(); }
+    setIndex(i, v) {
+        switch(i) {
+            case 0: this.x = v; break;
+            case 1: this.y = v; break;
+            case 2: this.z = v; break;
+        }
+    }
+    getIndex(i) {
+        switch(i) {
+            case 0: return this.x;
+            case 1: return this.y;
+            case 2: return this.z;
+            case 3: return 1;
+            default: return 0;
+        }
+    }
+}
+
+
+const canvas = document.querySelector('#cv1');
+const canvas2 = document.querySelector('#cv2');
+const ctx = canvas.getContext('2d');
+const ctx2 = canvas2.getContext('2d');
+var getColor = colorGeneratorFactory();
+const DPI = window.devicePixelRatio;
+
+const cube = {
+    center: new P3(),
+    size: 200 * DPI,
+    screenSize: 400 * DPI * 1.5,
+    halfScreenSize: 200 * DPI * 1.5,
+    D: 300 * DPI,
+};
+canvas.width = cube.screenSize;
+canvas.height = cube.screenSize;
+canvas2.width = cube.screenSize;
+canvas2.height = cube.screenSize;
+const matrix = makeRotationMatrix(new P3(0, 50, 80));
+const matrix2 = multiplyMatrices(makeRotationMatrix(new P3(-45, 0, 0)), matrix);
+const ZERO = new P3();
+
+function drawLine(_a, _b, color, info, cap = false) {
+    const { matrix, cube,  ctx } = info;
+    const a = applyMatrixToPoint(matrix, _a);
+    const b = applyMatrixToPoint(matrix, _b);
+    if (cap && (a.dist(ZERO) > cube.size/2 || b.dist(ZERO) > cube.size/2)) return;
+    const ZZ  = a.z + cube.D;
+    const ZZ2 = b.z + cube.D;
+    ctx.strokeStyle  = color;
+    ctx.beginPath();
+    ctx.moveTo(a.x*cube.D / ZZ + cube.halfScreenSize, a.y*cube.D / ZZ + cube.halfScreenSize);
+    ctx.lineTo(b.x*cube.D / ZZ2 + cube.halfScreenSize, b.y*cube.D / ZZ2 + cube.halfScreenSize);
+    ctx.stroke();
+    ctx.closePath();
+}
+
+function drawSinLine(a, b, period, amplitude, phase, color, info) {
+    const up = new P3(0, -1, 0);
+    const v = b.sub(a).unit();
+    const N = 100;
+    const dist = b.sub(a).mag();
+    const step  =  dist / N;
+    const periodX = Math.PI * 2 * period;
+    let prev = undefined;
+    for (let t = 0; t < N; t++) {
+        const T = step * t;
+        const S = Math.sin(periodX * (T + phase)) * amplitude;
+        const p = a.add(
+            v.scale(step * t).add(up.scale(S))
+        );
+        if (prev) {
+            drawLine(prev, p, color, info, true);
+        }
+        prev = p;
+    }
+}
+
+function drawCubeLines(cube, N, M, phase, info) {
+    const { center, size } = cube;
+    const topLeft = center.sub(new P3(size/2, size/2, size/2));
+    const stepN = size / N;
+    const stepM = size / M;
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < M; x++) {
+            const p = topLeft.add(new P3(x * stepM, y * stepN, 0));
+            const p2  = p.add(new P3(0, 0, size));
+            drawSinLine(p, p2, 0.01, 4, phase, getColor(x, y), info);
+        }
+    }
+}
+
+function drawRing(cube, scalar, angleFrom, angleTo, color, info) {
+    const skip = 1;
+    let a = angleFrom;
+    const deg2Rad = 180/Math.PI;
+    const S = cube.size * 0.5 * scalar;
+    while(a !== angleTo) {
+        const a2 = a + skip;
+        const p1 = new P3(Math.cos(a/deg2Rad) * S, 0, Math.sin(a/deg2Rad) * S);
+        const p2 = new P3(Math.cos(a2/deg2Rad) * S, 0, Math.sin(a2/deg2Rad) * S);
+        drawLine(p1, p2, color, info, false);
+        a = a2 % 360;
+    }
+}
+
+function drawRings(cube, angleFrom, angleTo, info) {
+    ctx.lineWidth = 2 * DPI;
+    const scalar = 0.01*DPI;
+    const N = 50 / DPI - 1;
+    for (let i = 0; i < N; i++) {
+        drawRing(cube, 1.35 + scalar * i, angleFrom, angleTo, getColor(i**i, -(i**i)), { ...info, matrix: matrix2 });
+    }
+}
+
+let phase = 0;
+let run = true;
+let hueT = 0;
+let dropShadowT = 0;
+const info = {
+    cube,
+    matrix,
+    ctx,
+    canvas,
+};
+
+ctx.translate(cube.halfScreenSize, cube.halfScreenSize);
+ctx2.translate(cube.halfScreenSize, cube.halfScreenSize);
+ctx.rotate(48 * Math.PI / 180);
+ctx2.rotate(48 * Math.PI / 180);
+ctx.translate(-cube.halfScreenSize, -cube.halfScreenSize);
+ctx2.translate(-cube.halfScreenSize, -cube.halfScreenSize);
+
+
+function draw() {
+    
+    ctx.clearRect(0, 0, cube.screenSize, cube.screenSize);
+    
+    // drawRings(cube, 90, 270, info);
+    ctx.lineWidth = Math.round(6/800 * cube.screenSize);
+    drawCubeLines(cube, 25/1.5, 20/1.5, phase, info);
+    drawRings(cube, 236, 126, {
+        ...info,
+        ctx: ctx2,
+        canvas: canvas2,
+    });
+    phase += 15;
+    dropShadowT += 0.1;
+    const ds = Math.floor((Math.sin(dropShadowT)+1) * 20 * DPI) + 25 * DPI;
+    const shadowColor = 'rgba(205, 255, 255, 0.8)';
+    canvas.style.filter = `contrast(${15}) blur(${1}px)  hue-rotate(${Math.floor(hueT)}deg) drop-shadow(0px 0px ${ds}px ${shadowColor})`;
+    canvas2.style.filter = `contrast(${15}) blur(${2}px)  hue-rotate(${Math.floor(hueT)}deg)`;
+    hueT = (hueT+2) % 360;
+   run && requestAnimationFrame(draw);
+}
+draw();
+
+
+
+
+function multiplyMatrices(m1, m2) {
+    const rv = Array.from({ length: 16 }, () => 0);
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            let sum = 0;
+            for (let i = 0; i < 4; i++) sum += m1[r*4 + i] * m2[i*4 + c];
+            rv[r*4 + c] = sum;
+        }
+    }
+    return rv;
+}
+
+function applyMatrixToPoint(m, p) {
+    const rv = new P3();
+    for (let i = 0; i < 4; i++) {
+        let sum = 0;
+        for (let j = 0; j < 4; j++) sum += m[i*4 + j] * p.getIndex(j);
+        rv.setIndex(i, sum);
+    }
+    return rv;
+}
+
+function makeRotationMatrix(r) {
+    return multiplyMatrices(
+        makeZRotationMatrix(r.z),
+        multiplyMatrices(
+            makeXRotationMatrix(r.x),
+            makeYRotationMatrix(r.y),
+        )
+    );
+}
+
+function makeYRotationMatrix(angle) {
+    const c = Math.cos(angle / 57.3);
+    const s = Math.sin(angle / 57.3);
+    return [
+         c, 0, s, 0,
+         0, 1, 0, 0,
+        -s, 0, c, 0,
+         0, 0, 0, 1,
+    ];
+}
+
+function makeXRotationMatrix(angle) {
+    const c = Math.cos(angle / 57.3);
+    const s = Math.sin(angle / 57.3);
+    return [
+         1, 0,  0, 0,
+         0, c, -s, 0,
+         0, s,  c, 0,
+         0, 0,  0, 1,
+    ];
+}
+
+function makeZRotationMatrix(angle) {
+    const c = Math.cos(angle / 57.3);
+    const s = Math.sin(angle / 57.3);
+    return [
+        c, -s, 0, 0,
+        s,  c, 0, 0,
+        0,  0, 1, 0,
+        0,  0, 0, 1,
+    ];
+}
+
+function colorGeneratorFactory()  {
+    const colorMap = new Map();
+    return function (x, y) {
+        const key = `${x},${y}`;
+        if (colorMap.has(key)) return  colorMap.get(key);
+        const randomColor = 'rgb(' + Array.from({ length: 3 }, () => Math.floor(Math.random() * 128 +  80)).join(',') +  ')';
+        colorMap.set(key, randomColor);
+        return randomColor;
+    };
+}    
+</script>
+  </body>
+  </html>
